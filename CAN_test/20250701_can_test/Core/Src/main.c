@@ -52,7 +52,7 @@ CAN_RxHeaderTypeDef   RxHeader;
 uint8_t               TxData[8];
 uint8_t               RxData[8];
 uint32_t              TxMailbox;
-	uint8_t cnt;
+uint8_t               cnt;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,7 +62,8 @@ static void MX_USART2_UART_Init(void);
 static void MX_CAN_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+// コールバック関数
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -103,64 +104,56 @@ int main(void)
   MX_CAN_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_CAN_Start(&hcan);
+  if (HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
+  {
+ 	  Error_Handler();
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int count=0;
-  HAL_CAN_Start(&hcan);
-  	 if (HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING) != HAL_OK)
-  		    {
-  		 	  Error_Handler();
-  	 	   }
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);//(GPIOAかBか,ピン)
+    HAL_Delay(500);
+    //char msg[] ="Hello STM32\r\n";
+    //HAL_UART_Transmit(&huart2,(uint8_t *)msg,sizeof(msg),3000);
+
+    TxHeader.StdId = 0x321;
+    TxHeader.RTR = CAN_RTR_DATA;
+    TxHeader.IDE = CAN_ID_STD;
+    TxHeader.DLC = 3;
+    TxHeader.TransmitGlobalTime = DISABLE;
+
+    TxData[0] = 0x31;
+    TxData[1] = 0x32;
+    TxData[2] = cnt;
+
+//    if(HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) == HAL_OK)
+//    {
+//    	char msg[] ="hal_ok\r\n";
+//    	HAL_UART_Transmit(&huart2,(uint8_t *)msg,sizeof(msg),3000);
+//     // Error_Handler();
+//    }
+    // 全メールボックスが空になるのを待つ
+    while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan) != 3) {
+    	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_10);
-	  hcan.pTxMsg->Data[0] = 0x31;
-		hcan.pTxMsg->Data[1] = 0x32;
-		if (HAL_CAN_Transmit(&hcan, 10) != HAL_OK) {
-			Error_Handler();
-		}
-		HAL_Delay(1000);
-//	 if(count>10000){
-//		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);//(GPIOAかBか,ピン)
-//		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
-//		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_10);
-//		count=0;
-//
-//		TxHeader.StdId = 1234;
-//		TxHeader.RTR = CAN_RTR_DATA;
-//		TxHeader.IDE = CAN_ID_STD;
-//		TxHeader.DLC = 3;
-//		TxHeader.TransmitGlobalTime = DISABLE;
-//		TxData[0] = 100;
-//		TxData[1] = 200;
-//		TxData[2] = cnt;
-//
-//		if(HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
-//		{
-//		Error_Handler();
-//		}
-//		while(HAL_CAN_GetTxMailboxesFreeLevel(&hcan) != 3) {}
-//
-//		if(cnt>250){
-//		   cnt=0;
-//		}
-//		else{
-//		   cnt++;
-//		}
-//	 }
-//	 count++;
+		char msg[] ="mailbox is not empty\r\n";
+		HAL_UART_Transmit(&huart2,(uint8_t *)msg,sizeof(msg),3000);
+    }
+    char msg[] ="mail box is empty\r\n";
+    HAL_UART_Transmit(&huart2,(uint8_t *)msg,sizeof(msg),3000);
 
-
-
-
+    if(cnt > 250){
+      cnt = 0;
+    } else {
+      cnt++;
+    }
   }
   /* USER CODE END 3 */
 }
@@ -181,7 +174,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL15;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -191,12 +186,12 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
@@ -213,66 +208,55 @@ void SystemClock_Config(void)
   * @param None
   * @retval None
   */
-
 static void MX_CAN_Init(void)
 {
-  // ... (既存の hcan 初期化コード)
 
+  /* USER CODE BEGIN CAN_Init 0 */
+
+  /* USER CODE END CAN_Init 0 */
+
+  /* USER CODE BEGIN CAN_Init 1 */
+
+  /* USER CODE END CAN_Init 1 */
+  hcan.Instance = CAN;
+  hcan.Init.Prescaler = 3;
+  hcan.Init.Mode = CAN_MODE_NORMAL;
+  hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan.Init.TimeSeg1 = CAN_BS1_7TQ;
+  hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
+  hcan.Init.TimeTriggeredMode = DISABLE;
+  hcan.Init.AutoBusOff = DISABLE;
+  hcan.Init.AutoWakeUp = DISABLE;
+  hcan.Init.AutoRetransmission = DISABLE;
+  hcan.Init.ReceiveFifoLocked = DISABLE;
+  hcan.Init.TransmitFifoPriority = DISABLE;
   if (HAL_CAN_Init(&hcan) != HAL_OK)
   {
-    _Error_Handler(__FILE__, __LINE__);
+    Error_Handler();
   }
-
-  CAN_FilterTypeDef  sFilterConfig; // 修正: CAN_FilterConfTypeDef -> CAN_FilterTypeDef
-  // static CanTxMsgTypeDef        TxMessage; // これらはもう必要ない場合が多い
-  // static CanRxMsgTypeDef        RxMessage; // これらはもう必要ない場合が多い
-  // hcan.pTxMsg = &TxMessage; // 削除
-  // hcan.pRxMsg = &RxMessage; // 削除
-  // hcan.pTxMsg = &TxMessage; // 削除
-  // hcan.pRxMsg = &RxMessage; // 削除
-
-  /*##-2- Configure the CAN Filter ###########################################*/
-  sFilterConfig.FilterNumber = 0;
+  /* USER CODE BEGIN CAN_Init 2 */
+  // Qiita記事のCANフィルタ設定を移植
+  CAN_FilterTypeDef  sFilterConfig;
+  sFilterConfig.FilterBank = 0;
   sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
   sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
   sFilterConfig.FilterIdHigh = 0x0000;
   sFilterConfig.FilterIdLow = 0x0000;
   sFilterConfig.FilterMaskIdHigh = 0x0000;
   sFilterConfig.FilterMaskIdLow = 0x0000;
-  sFilterConfig.FilterFIFOAssignment = CAN_FILTER_FIFO0; // 修正: 0 -> CAN_FILTER_FIFO0 または CAN_FILTER_FIFO1
+  sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
   sFilterConfig.FilterActivation = ENABLE;
-  sFilterConfig.BankNumber = 14; // この値はSTM32マイコンによって異なります。通常は設定不要か、CAN_FILTERBANK_ALL を使うことが多いです。
+  sFilterConfig.SlaveStartFilterBank = 14;
 
   if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK)
   {
-    /* Filter configuration Error */
     Error_Handler();
   }
 
-  /*##-3- Configure Transmission process #####################################*/
-  // ここから下のコードを新しいAPIに置き換えます
-  CAN_TxHeaderTypeDef TxHeader;
-  uint8_t TxData[8]; // 送信するデータペイロード
+  /* USER CODE END CAN_Init 2 */
 
-  TxHeader.StdId = 0x321;
-  TxHeader.RTR = CAN_RTR_DATA;
-  TxHeader.IDE = CAN_ID_STD;
-  TxHeader.DLC = 2;
-  TxHeader.TransmitGlobalTime = DISABLE; // 必要に応じて設定
-
-  // TxDataに具体的なデータを設定 (例として)
-  TxData[0] = 0x11;
-  TxData[1] = 0x22;
-
-  uint32_t TxMailbox; // 送信メールボックス番号
-
-  // ここでは初期化時ではなく、CANメッセージを実際に送信するタイミングで呼び出すのが一般的です。
-  // 例: メインループ内や特定のイベントハンドラ内
-  // if (HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox) != HAL_OK)
-  // {
-  //   Error_Handler();
-  // }
 }
+
 /**
   * @brief USART1 Initialization Function
   * @param None
@@ -324,7 +308,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
+  huart2.Init.BaudRate = 9600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -376,7 +360,21 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// Qiita記事の受信コールバック関数を移植
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+  if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
+  // 受信IDが0x321の場合のみ、LEDをトグルする
+  if (RxHeader.StdId == 0x321)
+  {
+    // GPIO_PIN_9と10をトグルして受信を可視化
+
+  }
+}
 /* USER CODE END 4 */
 
 /**
@@ -393,8 +391,7 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
